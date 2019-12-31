@@ -72,7 +72,9 @@ class SNRCallback(TensorboardAgentCallback):
         if episode_n % 100 == 0:
             with self.tb_writer.as_default():
                 for noisy_layer in self.noisy_layers:
-                    tf.summary.scalar(f"{noisy_layer.name} SNR", noisy_layer.get_snr(), step=episode_n)
+                    tf.summary.scalar(
+                        f"{noisy_layer.name} SNR", noisy_layer.get_snr(), step=episode_n
+                    )
 
 
 print(q_network.summary())
@@ -90,6 +92,9 @@ dqn_agent.train(
     nb_episodes=100000,
     callbacks=[
         EpisodeEndCallback(tb_writer=training_history_writer),
-        SNRCallback(noisy_layers=(noisy_dense_0, noisy_dense_1, noisy_dense_2), tb_writer=training_history_writer)
+        SNRCallback(
+            noisy_layers=(noisy_dense_0, noisy_dense_1, noisy_dense_2),
+            tb_writer=training_history_writer,
+        ),
     ],
 )
