@@ -73,6 +73,7 @@ class PrioritizedExperienceHistory:
         self.priority_beta_steps = priority_beta_steps
 
         self.priority_beta = initial_priority_beta
+        self.priority_beta_inc = (1.0 - initial_priority_beta) / priority_beta_steps
 
         self.history_size = history_size
         self.batch_size = batch_size
@@ -126,7 +127,7 @@ class PrioritizedExperienceHistory:
 
     def sample_batch(self):
         priority_prob = np.power(
-            self.priority[:self.history_length], self.priority_alpha
+            self.priority[: self.history_length], self.priority_alpha
         )
         priority_prob /= priority_prob.sum()
 
@@ -154,14 +155,7 @@ class PrioritizedExperienceHistory:
 
     def update_batch_priorities(self, batch_loss):
         self.priority[self.batch_indices] = self.weights * (batch_loss + 1e-10)
-        self.priority_beta = min(
-            1.0,
-            self.initial_priority_beta
-            + (
-                self.step_count
-                * ((1.0 - self.initial_priority_beta) / self.priority_beta_steps)
-            ),
-        )
+        self.priority_beta = min(1.0, self.priority_beta + self.priority_beta_inc)
         self.step_count += 1
 
 
