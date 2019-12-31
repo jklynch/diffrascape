@@ -262,17 +262,20 @@ class DeepQNetworkAgent:
             callbacks = []
         self.callback_group = AgentCallbackGroup(callback_group=callbacks)
 
-    def train(self, env, nb_episodes, begin_epsilon_decay):
+    def train(
+        self,
+        env,
+        nb_episodes,
+        begin_epsilon_decay,
+        epsilon_decay_steps,
+        epsilon_min,
+        experience_history,
+        validation_episode_interval,
+        validation_episode_count,
+    ):
         self.callback_group.on_train_begin()
 
-        experience_history = PrioritizedExperienceHistory(
-            priority_alpha=0.6,
-            initial_priority_beta=0.4,
-            priority_beta_steps=100000,
-            history_size=self.history_size,
-            batch_size=self.batch_size,
-            state_shape=env.observation_space.shape,
-        )
+        epsilon_inc = (1.0 - epsilon_min) / epsilon_decay_steps
 
         try:
             # use an explicit loop for episodes
@@ -304,7 +307,7 @@ class DeepQNetworkAgent:
                         action = np.argmax(q_values)
 
                     if all_step_n > begin_epsilon_decay:
-                        self.epsilon = max(0.02, self.epsilon - 0.0001)
+                        self.epsilon = max(epsilon_min, self.epsilon - epsilon_inc)
 
                     self.callback_group.on_action_begin(action)
                     state1, reward, done, _ = env.step(action)
@@ -344,21 +347,28 @@ class DeepQNetworkAgent:
 
                 log = {
                     "episode_steps": episode_step_n,
-                    "total_loss": episode_loss,
                     "loss_per_step": (episode_loss / episode_step_n),
                     "epsilon": self.epsilon,
                     "beta": experience_history.priority_beta,
                 }
-                validation_episode_interval = 100
                 if episode_n % validation_episode_interval == 0:
                     validation_steps_per_episode = self.validate(
-                        env, total_validation_episodes=100
+                        env, total_validation_episodes=validation_episode_count
                     )
                     log.update(
                         {
                             "validation_mean_steps_per_episode": np.mean(
                                 validation_steps_per_episode
-                            )
+                            ),
+                            "validation_median_steps_per_episode": np.median(
+                                validation_steps_per_episode
+                            ),
+                            "validation_max_steps_per_episode": max(
+                                validation_steps_per_episode
+                            ),
+                            "validation_min_steps_per_episode": min(
+                                validation_steps_per_episode
+                            ),
                         }
                     )
 
@@ -577,7 +587,6 @@ class DeepQNetworkAgent:
         )
 
         # calculate loss per sample before training
-        # it is a little risky to call .loss() this way because it could be a list
         loss_per_sample = self.training_q_network.loss_functions[0](
             y_pred=self.training_q_network.predict_on_batch(x=state0_batch),
             y_true=expected_discounted_reward_batch,
