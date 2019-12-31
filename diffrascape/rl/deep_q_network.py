@@ -245,8 +245,6 @@ class DeepQNetworkAgent:
     def __init__(
         self,
         q_network,
-        batch_size,
-        history_size,
         min_training_history_size,
         gamma,
         target_q_network_update_interval,
@@ -256,8 +254,6 @@ class DeepQNetworkAgent:
         self.target_q_network = Sequential.from_config(
             q_network.get_config(), custom_objects={"NoisyDense": NoisyDense}
         )
-        self.batch_size = batch_size
-        self.history_size = history_size
         self.min_training_history_size = min_training_history_size
         self.gamma = gamma
         self.epsilon = 1.0
