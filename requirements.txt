@@ -1,0 +1,6 @@
+gym
+keras
+matplotlib
+pytest
+tensorboard
+tensorflow
