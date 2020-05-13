@@ -2,19 +2,20 @@ import datetime
 import time
 
 import gym
-from keras.layers import BatchNormalization, Dense, Dropout, LeakyReLU
+from keras.layers import Dense, Dropout
 from keras.models import Sequential
-from keras.regularizers import l2
 import tensorflow as tf
 
 from diffrascape.rl.deep_q_network import (
     DeepQNetworkAgent,
-    NoisyDense,
     PrioritizedExperienceHistory,
     TensorboardAgentCallback,
 )
 
-env = gym.make("CartPole-v1")
+from diffrascape.env.variance1 import Variance1
+
+
+env = Variance1()
 print(env)
 print(f"action space: (shape: {env.action_space.n}) {env.action_space}")
 print(
@@ -90,7 +91,7 @@ dqn_agent = DeepQNetworkAgent(
     q_network=q_network,
     min_training_history_size=100,
     gamma=0.95,
-    target_q_network_update_interval=1000,
+    target_q_network_update_interval=100,
     callbacks=[
         EpisodeEndCallback(tb_writer=training_history_writer),
         # SNRCallback([noisy_layer_1, noisy_layer_2], tb_writer=training_history_writer)
@@ -111,8 +112,9 @@ dqn_agent.train(
     nb_episodes=1000,
     experience_history=experience_history,
     begin_epsilon_decay=1000,
-    epsilon_decay_steps=10000,
+    epsilon_decay_steps=100000,
     epsilon_min=0.01,
     validation_episode_interval=100,
     validation_episode_count=100,
+    use_epsilon_greedy_policy=True
 )

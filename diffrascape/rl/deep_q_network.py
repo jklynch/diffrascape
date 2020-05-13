@@ -58,6 +58,29 @@ class ExperienceHistory:
 
 
 class PrioritizedExperienceHistory:
+    """
+    Reference: "Prioritized Experience Replay", Schaul, et al https://arxiv.org/pdf/1511.05952.pdf
+
+    Hyperparameters of the prioritized experience replay algorithm are
+        priority_alpha        - "alpha" in the original paper
+        priority_beta         - "beta" in the original paper
+        initial_priority_beta - the starting value for beta
+        priority_beta_inc     - amount to add to beta at each step
+
+     Instances maintain a set of arrays to hold a single batch of experiences
+         state0_batch
+         action_batch
+         reward_batch
+         done_batch
+         state1_batch
+
+    Instances maintain several large arrays of historical data
+        state0_history
+        action_history
+        reward_history
+        done_history
+        state1_history
+    """
     def __init__(
         self,
         priority_alpha,
@@ -198,47 +221,20 @@ class TensorboardAgentCallback(AgentCallback):
 
 class AgentCallbackGroup(AgentCallback):
     def __init__(self, callback_group):
+        print(f"callback_group: {callback_group}")
         self.callback_group = callback_group
 
-    def on_train_begin(self, *args, **kwargs):
-        for c in self.callback_group:
-            c.on_train_begin(*args, **kwargs)
+    def __getattribute__(self, attr_name):
+        attr = super().__getattribute__(attr_name)
+        if callable(attr):
 
-    def on_train_end(self, *args, **kwargs):
-        for c in self.callback_group:
-            c.on_train_end(*args, **kwargs)
-
-    def on_episode_begin(self, episode_n):
-        for c in self.callback_group:
-            c.on_episode_begin(episode_n)
-
-    def on_episode_end(self, episode_n, **kwargs):
-        for c in self.callback_group:
-            c.on_episode_end(episode_n=episode_n, **kwargs)
-
-    def on_action_begin(self, action):
-        for c in self.callback_group:
-            c.on_action_begin(action=action)
-
-    def on_action_end(self, action, reward, done):
-        for c in self.callback_group:
-            c.on_action_end(action=action, reward=reward, done=done)
-
-    def on_step_begin(self, step_n):
-        for c in self.callback_group:
-            c.on_step_begin(step_n=step_n)
-
-    def on_step_end(self, step_n):
-        for c in self.callback_group:
-            c.on_step_end(step_n=step_n)
-
-    def on_update_begin(self):
-        for c in self.callback_group:
-            c.on_update_begin()
-
-    def on_update_end(self):
-        for c in self.callback_group:
-            c.on_update_end()
+            def collection_callback(*args, **kwargs):
+                for c in self.callback_group:
+                    callback_method = getattr(c, attr_name)
+                    callback_method(*args, **kwargs)
+            return collection_callback
+        else:
+            return super().__getattribute__(attr_name)
 
 
 class DeepQNetworkAgent:
@@ -266,6 +262,7 @@ class DeepQNetworkAgent:
         self,
         env,
         nb_episodes,
+        use_epsilon_greedy_policy,
         begin_epsilon_decay,
         epsilon_decay_steps,
         epsilon_min,
@@ -297,10 +294,10 @@ class DeepQNetworkAgent:
 
                     state0 = state1
 
-                    if np.random.rand() <= self.epsilon:
+                    if use_epsilon_greedy_policy and np.random.rand() <= self.epsilon:
                         action = env.action_space.sample()
                     else:
-                        # add the batch dimension to state0
+                        #add the batch dimension to state0
                         q_values = self.training_q_network.predict(
                             np.expand_dims(a=state0, axis=0)
                         )
@@ -334,7 +331,7 @@ class DeepQNetworkAgent:
                         self.callback_group.on_update_end()
 
                     if all_step_n % self.target_q_network_update_interval == 0:
-                        print(f"step {all_step_n}: update target_q_network weights")
+                        #print(f"step {all_step_n}: update target_q_network weights")
                         self.target_q_network.set_weights(
                             self.training_q_network.get_weights()
                         )
@@ -592,11 +589,12 @@ class DeepQNetworkAgent:
             y_true=expected_discounted_reward_batch,
         )
 
-        loss = self.training_q_network.train_on_batch(
+        # train
+        batch_loss = self.training_q_network.train_on_batch(
             x=state0_batch, y=expected_discounted_reward_batch
         )
 
-        return loss, loss_per_sample
+        return batch_loss, loss_per_sample
 
     def validate(self, env, total_validation_episodes):
         validation_steps_per_episode = []
@@ -632,26 +630,25 @@ class NoisyDense(Dense):
 
     """
 
-    def __init__(self, noise_std=0.017, **kwargs):
-        self.noise_mean = 0.0
-        self.noise_std = noise_std
-
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
         self.kernel_multiplier = None
         self.bias_multiplier = None
 
-        super().__init__(**kwargs)
-
     def build(self, input_shape):
         assert len(input_shape) >= 2
-        input_dim = input_shape[-1]
-
-        init_value = 0.4 / np.sqrt(np.product(input_shape[1:-2]))
+        #input_dim = input_shape[1:]
+        #print(f"NoiseDense.build(input_shape={input_shape})")
+        #input_feature_count = np.product(input_dim)
+        #print(f"input_feature_count: {input_feature_count}")
+        #init_value = np.sqrt(3.0 / np.product(input_shape))
+        #print(f"init_value: {init_value}")
 
         self.kernel_multiplier = self.add_weight(
-            shape=(input_dim, self.units),
-            initializer=keras.initializers.RandomUniform(
-                minval=(-1.0 * init_value), maxval=init_value
-            ),
+            shape=(input_shape[-1], self.units),
+            initializer=keras.initializers.Constant(value=0.017),
+            #    minval=(-1.0 * init_value), maxval=init_value
+            #),
             name="kernel_multiplier",
             regularizer=self.kernel_regularizer,
             constraint=self.kernel_constraint,
@@ -659,9 +656,9 @@ class NoisyDense(Dense):
         if self.use_bias:
             self.bias_multiplier = self.add_weight(
                 shape=(self.units,),
-                initializer=keras.initializers.RandomUniform(
-                    minval=(-1.0 * init_value), maxval=init_value
-                ),
+                initializer=keras.initializers.Constant(value=0.017),
+                #    minval=(-1.0 * init_value), maxval=init_value
+                #),
                 name="bias_multiplier",
                 regularizer=self.bias_regularizer,
                 constraint=self.bias_constraint,
@@ -670,32 +667,29 @@ class NoisyDense(Dense):
         super().build(input_shape)  # Be sure to call this at the end
 
     def call(self, inputs):
-        epsilon_w = K.random_normal(
-            shape=self.kernel.shape, mean=self.noise_mean, stddev=self.noise_std
-        )
+        epsilon_w = K.random_normal(shape=self.kernel.shape)
         noisy_kernel = self.kernel + (epsilon_w * self.kernel_multiplier)
         noisy_output = K.dot(inputs, noisy_kernel)
         if self.use_bias:
-            epsilon_b = K.random_normal(
-                shape=self.bias.shape, mean=self.noise_mean, stddev=self.noise_std
-            )
+            epsilon_b = K.random_normal(shape=self.bias.shape)
             noisy_bias = self.bias + (epsilon_b * self.bias_multiplier)
-            noisy_output = K.bias_add(
-                noisy_output, noisy_bias, data_format="channels_last"
-            )
+            # noisy_output = K.bias_add(
+            #     noisy_output, noisy_bias, data_format="channels_last"
+            # )
+            noisy_output = noisy_output + noisy_bias
         if self.activation is not None:
             noisy_output = self.activation(noisy_output)
         return noisy_output
 
-    def get_config(self):
-        config = super().get_config()
-        config.update(
-            {
-                # "noise_mean": self.noise_mean,
-                "noise_std": self.noise_std
-            }
-        )
-        return config
+    # def get_config(self):
+    #     config = super().get_config()
+    #     config.update(
+    #         {
+    #             # "noise_mean": self.noise_mean,
+    #             "noise_std": self.noise_std
+    #         }
+    #     )
+    #     return config
 
     def get_snr(self):
         return np.sqrt(np.mean(np.square(self.kernel))) / (

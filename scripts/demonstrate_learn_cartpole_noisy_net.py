@@ -2,9 +2,8 @@ import datetime
 import time
 
 import gym
-from keras.layers import BatchNormalization, Dense, Dropout, LeakyReLU
+from keras.layers import Dense, Dropout
 from keras.models import Sequential
-from keras.regularizers import l2
 import tensorflow as tf
 
 from diffrascape.rl.deep_q_network import (
@@ -28,7 +27,7 @@ print(
 q_network = Sequential()
 # noisy_layer_1 = NoisyDense(units=64, input_shape=env.observation_space.shape, activation='relu')
 q_network.add(
-    Dense(units=128, input_shape=env.observation_space.shape, activation="relu")
+    NoisyDense(units=128, input_shape=env.observation_space.shape, activation="relu")
 )
 q_network.add(Dropout(rate=0.01))  # not bad
 # q_network.add(BatchNormalization())
@@ -112,7 +111,7 @@ dqn_agent.train(
     experience_history=experience_history,
     begin_epsilon_decay=1000,
     epsilon_decay_steps=10000,
-    epsilon_min=0.01,
+    epsilon_min=1.0,
     validation_episode_interval=100,
     validation_episode_count=100,
 )
